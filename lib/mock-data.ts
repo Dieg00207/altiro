@@ -19,6 +19,7 @@ export type Bet = {
   awayTeam: string
   league: string
   prediction: string
+  selection?: "HOME" | "AWAY" | "DRAW"
   amount: number
   mode: "random" | "direct"
   status: "pending" | "matched" | "won" | "lost"

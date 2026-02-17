@@ -6,7 +6,9 @@ import { useAuth } from "@/lib/auth-context"
 
 type BetsContextType = {
   bets: Bet[]
-  placeBet: (bet: Omit<Bet, "id" | "date" | "status">) => void
+  placeBet: (
+    bet: Omit<Bet, "id" | "date" | "status">
+  ) => Promise<{ success: boolean; error?: string }>
   simulateResults: () => void
 }
 
@@ -59,41 +61,67 @@ export function BetsProvider({ children }: { children: ReactNode }) {
   )
 
   const placeBet = useCallback(
-    (betData: Omit<Bet, "id" | "date" | "status">) => {
-      if (!user) return
+    async (betData: Omit<Bet, "id" | "date" | "status">) => {
+      if (!user) return { success: false, error: "No hay usuario" }
 
-      const newBet: Bet = {
-        ...betData,
-        id: `b-${Date.now()}`,
-        date: new Date().toISOString().split("T")[0],
-        status: "pending",
-      }
-
-      // Simulate matching after 2 seconds
-      setTimeout(() => {
-        setBets((prev) => {
-          const updated = prev.map((b) =>
-            b.id === newBet.id
-              ? {
-                  ...b,
-                  status: "matched" as const,
-                  opponent:
-                    b.mode === "direct"
-                      ? b.opponent
-                      : opponents[Math.floor(Math.random() * opponents.length)],
-                }
-              : b
-          )
-          if (user) localStorage.setItem(`peerbet_bets_${user.id}`, JSON.stringify(updated))
-          return updated
+      try {
+        const res = await fetch("/api/bets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: user.id,
+            eventId: betData.matchId,
+            selection: betData.selection || "HOME",
+            amount: betData.amount,
+            mode: betData.mode,
+            opponentCode: betData.mode === "direct" ? betData.opponent : undefined,
+          }),
         })
-      }, 2000)
 
-      // Deduct the amount from balance
-      updateBalance(-betData.amount)
+        const data = await res.json()
+        if (!res.ok) {
+          return { success: false, error: data?.error || "Error al guardar la apuesta" }
+        }
 
-      const updated = [...bets, newBet]
-      saveBets(updated)
+        const isMatched = data.offerStatus === "MATCHED"
+
+        const newBet: Bet = {
+          ...betData,
+          id: data.offerId || `b-${Date.now()}`,
+          date: new Date().toISOString().split("T")[0],
+          status: isMatched ? "matched" : "pending",
+        }
+
+        if (!isMatched && betData.mode === "random") {
+          setTimeout(() => {
+            setBets((prev) => {
+              const updated = prev.map((b) =>
+                b.id === newBet.id
+                  ? {
+                      ...b,
+                      status: "matched" as const,
+                      opponent: opponents[Math.floor(Math.random() * opponents.length)],
+                    }
+                  : b
+              )
+              if (user) localStorage.setItem(`peerbet_bets_${user.id}`, JSON.stringify(updated))
+              return updated
+            })
+          }, 2000)
+        }
+
+        if (typeof data.balance === "number") {
+          updateBalance(data.balance - user.balance)
+        } else {
+          updateBalance(-betData.amount)
+        }
+
+        const updated = [...bets, newBet]
+        saveBets(updated)
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: "Error al conectar con el servidor" }
+      }
     },
     [user, bets, saveBets, updateBalance]
   )

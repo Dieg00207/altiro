@@ -15,9 +15,8 @@ type BetModalProps = {
 }
 
 const predictions = [
-  { id: "home", label: "Victoria local" },
-  { id: "draw", label: "Empate" },
-  { id: "away", label: "Victoria visitante" },
+  { id: "HOME", label: "Victoria local" },
+  { id: "AWAY", label: "Victoria visitante" },
 ]
 
 export function BetModal({ match, onClose }: BetModalProps) {
@@ -29,6 +28,7 @@ export function BetModal({ match, onClose }: BetModalProps) {
   const [friendCode, setFriendCode] = useState("")
   const [submitted, setSubmitted] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [submitError, setSubmitError] = useState("")
 
   const amountNum = Number.parseFloat(amount) || 0
   const commission = amountNum * 0.05
@@ -36,26 +36,37 @@ export function BetModal({ match, onClose }: BetModalProps) {
   const balance = user?.balance ?? 0
   const insufficientFunds = amountNum > balance
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (!selectedPrediction || amountNum <= 0 || insufficientFunds || !user) return
+    if (mode === "direct" && !friendCode.trim()) {
+      setSubmitError("Ingresa el codigo del amigo")
+      return
+    }
+    setSubmitError("")
     setIsProcessing(true)
 
     const predLabel = predictions.find((p) => p.id === selectedPrediction)?.label ?? selectedPrediction
 
-    setTimeout(() => {
-      placeBet({
-        matchId: match.id,
-        homeTeam: match.homeTeam,
-        awayTeam: match.awayTeam,
-        league: match.league,
-        prediction: predLabel,
-        amount: amountNum,
-        mode,
-        opponent: mode === "direct" ? friendCode || "Amigo" : undefined,
-      })
-      setIsProcessing(false)
-      setSubmitted(true)
-    }, 1200)
+    const result = await placeBet({
+      matchId: match.id,
+      homeTeam: match.homeTeam,
+      awayTeam: match.awayTeam,
+      league: match.league,
+      prediction: predLabel,
+      selection: selectedPrediction as "HOME" | "AWAY",
+      amount: amountNum,
+      mode,
+      opponent: mode === "direct" ? friendCode.trim() : undefined,
+    })
+
+    setIsProcessing(false)
+
+    if (!result.success) {
+      setSubmitError(result.error || "No se pudo registrar la apuesta")
+      return
+    }
+
+    setSubmitted(true)
   }
 
   return (
@@ -165,7 +176,7 @@ export function BetModal({ match, onClose }: BetModalProps) {
             {/* Prediction */}
             <div className="mb-5">
               <p className="mb-2 text-xs font-medium text-[hsl(var(--muted-foreground))]">TU PREDICCION</p>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 {predictions.map((pred) => (
                   <button
                     key={pred.id}
@@ -234,6 +245,12 @@ export function BetModal({ match, onClose }: BetModalProps) {
                   <span className="text-[hsl(var(--muted-foreground))]">Si ganas, recibes</span>
                   <span className="text-[hsl(var(--primary))]">L. {(netAmount + amountNum).toFixed(2)}</span>
                 </div>
+              </div>
+            )}
+
+            {submitError && (
+              <div className="mb-4 rounded-lg bg-[hsl(var(--destructive))]/10 p-3 text-sm text-[hsl(var(--destructive))]">
+                {submitError}
               </div>
             )}
 

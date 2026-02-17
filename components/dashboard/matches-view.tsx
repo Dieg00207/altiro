@@ -1,16 +1,51 @@
 "use client"
 
-import { useState } from "react"
-import { matches, type Match } from "@/lib/mock-data"
+import { useEffect, useState } from "react"
+import type { Match } from "@/lib/mock-data"
 import { MatchCard } from "./match-card"
 import { BetModal } from "./bet-modal"
 import { cn } from "@/lib/utils"
 
-const leagues = ["Todas", "La Liga", "Premier League", "Serie A", "Bundesliga", "Ligue 1", "Liga Nacional"]
+const leagues = ["Todas", "UEFA Champions League"]
 
 export function MatchesView() {
   const [selectedLeague, setSelectedLeague] = useState("Todas")
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null)
+  const [matches, setMatches] = useState<Match[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+
+    async function loadMatches() {
+      try {
+        setIsLoading(true)
+        const res = await fetch("/api/events")
+        if (!res.ok) {
+          throw new Error("No se pudieron cargar los partidos")
+        }
+        const data = await res.json()
+        if (active) {
+          setMatches(data.matches || [])
+          setError(null)
+        }
+      } catch (err) {
+        if (active) {
+          setError("No se pudieron cargar los partidos")
+          setMatches([])
+        }
+      } finally {
+        if (active) setIsLoading(false)
+      }
+    }
+
+    loadMatches()
+
+    return () => {
+      active = false
+    }
+  }, [])
 
   const liveMatches = matches.filter((m) => m.status === "live")
   const upcomingMatches = matches.filter((m) => m.status === "upcoming")
@@ -24,6 +59,22 @@ export function MatchesView() {
     selectedLeague === "Todas"
       ? upcomingMatches
       : upcomingMatches.filter((m) => m.league === selectedLeague)
+
+  if (isLoading) {
+    return (
+      <div className="py-16 text-center text-sm text-[hsl(var(--muted-foreground))]">
+        Cargando partidos...
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="py-16 text-center text-sm text-[hsl(var(--destructive))]">
+        {error}
+      </div>
+    )
+  }
 
   return (
     <>

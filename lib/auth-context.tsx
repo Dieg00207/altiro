@@ -58,19 +58,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setGoogleError(errMsg);
       return { success: false, error: errMsg };
     } else if (result && result.user) {
-      // Adaptar el usuario de Firebase a tu modelo local si es necesario
-      const googleUser = {
-        id: result.user.uid,
-        name: result.user.displayName || '',
-        email: result.user.email || '',
-        code: generateCode(),
-        balance: 5000,
-        kycVerified: false,
-        createdAt: new Date().toISOString(),
-      };
-      setUser(googleUser);
-      localStorage.setItem('peerbet_user', JSON.stringify(googleUser));
-      return { success: true };
+      const email = result.user.email || '';
+      const name = result.user.displayName || '';
+
+      try {
+        const res = await fetch('/api/auth/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, name }),
+        });
+
+        if (!res.ok) {
+          const errMsg = 'No se pudo sincronizar el usuario con la base de datos';
+          setGoogleError(errMsg);
+          return { success: false, error: errMsg };
+        }
+
+        const data = await res.json();
+        const dbUser = data?.user;
+
+        if (!dbUser) {
+          const errMsg = 'Respuesta invalida del servidor';
+          setGoogleError(errMsg);
+          return { success: false, error: errMsg };
+        }
+
+        const googleUser = {
+          id: dbUser.id,
+          name: dbUser.name || name,
+          email: dbUser.email || email,
+          code: dbUser.code,
+          balance: Number(dbUser.balance ?? 0),
+          kycVerified: Boolean(dbUser.kycVerified),
+          createdAt: dbUser.createdAt || new Date().toISOString(),
+        };
+
+        setUser(googleUser);
+        localStorage.setItem('peerbet_user', JSON.stringify(googleUser));
+        return { success: true };
+      } catch (error) {
+        const errMsg = 'Error al conectar con el servidor';
+        setGoogleError(errMsg);
+        return { success: false, error: errMsg };
+      }
     }
     return { success: false, error: 'Error desconocido' };
   }, []);
